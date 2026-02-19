@@ -1,0 +1,1 @@
+C:\users\user\appdata\local\programs\eclipse adoptium\jdk-21.0.10.7-hotspot\bin\java.exe
