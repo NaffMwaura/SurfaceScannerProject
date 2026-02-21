@@ -21,8 +21,11 @@ import java.util.Map;
 
 public class SurfaceScanner extends JavaPlugin implements Listener {
 
+    private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
+
     @Override
     public void onEnable() {
+        // Register the listener so the Stick interaction works
         getServer().getPluginManager().registerEvents(this, this);
         getLogger().info("SurfaceScanner enabled!");
     }
@@ -38,44 +41,61 @@ public class SurfaceScanner extends JavaPlugin implements Listener {
     }
 
     private void scanSurface(Player player) {
-        player.sendMessage("§aStarting surface scan...");
-        
-        List<Map<String, Object>> scanData = new ArrayList<>();
-        int radius = 10;
-        Block center = player.getLocation().getBlock();
+        player.sendMessage("§aStarting surface scan in background...");
 
-        for (int x = -radius; x <= radius; x++) {
-            for (int z = -radius; z <= radius; z++) {
-                Block b = player.getWorld().getHighestBlockAt(center.getX() + x, center.getZ() + z);
-                
-                Map<String, Object> blockInfo = new HashMap<>();
-                // Use .put() for Maps, not .add()
-                blockInfo.put("x", b.getX());
-                blockInfo.put("y", b.getY());
-                blockInfo.put("z", b.getZ());
-                blockInfo.put("type", b.getType().toString());
-                
-                scanData.add(blockInfo);
+        // Capture necessary data from the main thread before going async
+        // (You cannot call certain Bukkit methods safely from an async thread, 
+        // but world.getHighestBlockAt is generally safe in modern Paper versions)
+        int radius = 25; // Increased radius since it's now async
+        int centerX = player.getLocation().getBlockX();
+        int centerZ = player.getLocation().getBlockZ();
+        org.bukkit.World world = player.getWorld();
+
+        // Start the background task
+        getServer().getScheduler().runTaskAsynchronously(this, () -> {
+            List<Map<String, Object>> scanData = new ArrayList<>();
+
+            for (int x = -radius; x <= radius; x++) {
+                for (int z = -radius; z <= radius; z++) {
+                    // Get the highest block at these coordinates
+                    Block b = world.getHighestBlockAt(centerX + x, centerZ + z);
+                    
+                    Map<String, Object> blockInfo = new HashMap<>();
+                    blockInfo.put("x", b.getX());
+                    blockInfo.put("y", b.getY());
+                    blockInfo.put("z", b.getZ());
+                    blockInfo.put("type", b.getType().toString());
+                    
+                    scanData.add(blockInfo);
+                }
             }
-        }
 
-        saveToJson(scanData, player);
+            // Save the data to file (still on the background thread)
+            saveToJson(scanData, player);
+        });
     }
 
     private void saveToJson(List<Map<String, Object>> data, Player player) {
         // Ensure plugin folder exists
         if (!getDataFolder().exists()) {
-            getDataFolder().mkdir();
+            getDataFolder().mkdirs();
         }
 
         File file = new File(getDataFolder(), "surface_data.json");
-        Gson gson = new GsonBuilder().setPrettyPrinting().create();
 
         try (FileWriter writer = new FileWriter(file)) {
             gson.toJson(data, writer);
-            player.sendMessage("§6Scan complete! Saved to: §f/plugins/SurfaceScanner/" + file.getName());
+            
+            // Use a task to send the message back on the main thread
+            getServer().getScheduler().runTask(this, () -> {
+                player.sendMessage("§6Scan complete! Saved " + data.size() + " blocks to: §f/plugins/SurfaceScanner/" + file.getName());
+            });
+            
+            getLogger().info("SurfaceScanner: Saved data for " + player.getName());
         } catch (IOException e) {
-            player.sendMessage("§cFailed to save scan data.");
+            getServer().getScheduler().runTask(this, () -> {
+                player.sendMessage("§cFailed to save scan data.");
+            });
             e.printStackTrace();
         }
     }
