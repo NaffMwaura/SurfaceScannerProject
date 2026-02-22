@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Surface Scanner Visualizer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background: #0f172a; color: white; font-family: sans-serif; }
+        canvas { display: block; }
+        .ui-panel {
+            position: absolute; top: 20px; left: 20px;
+            background: rgba(15, 23, 42, 0.9);
+            padding: 20px; border-radius: 12px;
+            border: 1px solid #334155; backdrop-filter: blur(8px);
+            z-index: 100; max-width: 300px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="ui-panel">
+        <h1 class="text-xl font-bold mb-2 text-blue-400">Surface Scanner</h1>
+        <p class="text-xs text-slate-400 mb-4">Upload your processed_surface.json to view the 3D thin-pixel scan.</p>
+        
+        <input type="file" id="fileInput" class="hidden" accept=".json">
+        <button onclick="document.getElementById('fileInput').click()" 
+                class="w-full bg-blue-600 hover:bg-blue-500 text-white py-2 px-4 rounded-lg transition-all font-medium mb-4">
+            Load Scan Data
+        </button>
+
+        <div id="stats" class="text-sm space-y-1 hidden">
+            <div class="flex justify-between"><span class="text-slate-500">Pixels:</span> <span id="count">0</span></div>
+            <div class="flex justify-between"><span class="text-slate-500">Depth:</span> <span id="depth">0</span></div>
+        </div>
+    </div>
+
+    <script>
+        let scene, camera, renderer, points;
+
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            camera.position.z = 10;
+            camera.position.y = 5;
+            camera.lookAt(0, 0, 0);
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+
+            window.addEventListener('resize', onWindowResize, false);
+            animate();
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (points) {
+                points.rotation.y += 0.002;
+            }
+            renderer.render(scene, camera);
+        }
+
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = JSON.parse(e.target.result);
+                renderData(data);
+            };
+            reader.readAsText(file);
+        });
+
+        function renderData(data) {
+            // Clear existing
+            if (points) scene.remove(points);
+
+            const pixels = data.pixels || [];
+            const geometry = new THREE.BufferGeometry();
+            const positions = [];
+            const colors = [];
+
+            // Center the scan
+            let midX = 0, midY = 0, midZ = 0;
+            pixels.forEach(p => {
+                midX += p.pos.x; midY += p.pos.y; midZ += p.pos.z;
+            });
+            midX /= pixels.length; midY /= pixels.length; midZ /= pixels.length;
+
+            pixels.forEach(p => {
+                positions.push(p.pos.x - midX, p.pos.y - midY, p.pos.z - midZ);
+                colors.push(p.color.r / 255, p.color.g / 255, p.color.b / 255);
+            });
+
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+            const material = new THREE.PointsMaterial({ 
+                size: 0.1, 
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.8
+            });
+
+            points = new THREE.Points(geometry, material);
+            scene.add(points);
+
+            // Update UI
+            document.getElementById('stats').classList.remove('hidden');
+            document.getElementById('count').innerText = pixels.length.toLocaleString();
+            document.getElementById('depth').innerText = data.metadata.shave_depth;
+        }
+
+        init();
+    </script>
+</body>
+</html>
