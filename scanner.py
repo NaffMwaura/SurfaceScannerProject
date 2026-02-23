@@ -88,6 +88,7 @@ def monitor_minecraft_data(input_file="surface_data.json"):
         
         time.sleep(0.5)
 
+
 if __name__ == "__main__":
     try:
         monitor_minecraft_data()
