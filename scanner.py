@@ -1,13 +1,17 @@
 import json
 import time
 import os
-import random
 
 class ThinPixelScanner:
     def __init__(self, thickness=0.0001):
         self.thickness = thickness
         self.scanned_pixels = []
+        self.player_metadata = {}
         print(f"[SYSTEM] Shaving Engine Ready. Depth: {self.thickness}")
+
+    def set_player_state(self, state):
+        """Stores motion, inventory, and held item data."""
+        self.player_metadata = state
 
     def add_pixel(self, x, y, z, r, g, b, normal_vector=(0, 0, 1)):
         pixel_data = {
@@ -26,13 +30,17 @@ class ThinPixelScanner:
                 "metadata": {
                     "total_pixels": len(self.scanned_pixels),
                     "shave_depth": self.thickness,
-                    "timestamp": time.time()
+                    "timestamp": time.time(),
+                    "player_state": self.player_metadata
                 },
                 "pixels": self.scanned_pixels
             }
             with open(filename, 'w') as f:
                 json.dump(output, f, indent=4)
             print(f"[SUCCESS] Shaved {len(self.scanned_pixels)} blocks into Thin-Pixels.")
+            if self.player_metadata:
+                motion = f"({self.player_metadata.get('motion_x', 0):.2f}, {self.player_metadata.get('motion_y', 0):.2f})"
+                print(f"[MOTION] Captured Velocity: {motion}")
         except Exception as e:
             print(f"[ERROR] Save failed: {e}")
 
@@ -48,26 +56,41 @@ def monitor_minecraft_data(input_file="surface_data.json"):
                 
                 if current_mtime != last_mtime:
                     # Give Java a moment to finish writing
-                    time.sleep(0.2) 
+                    time.sleep(0.3) 
                     
                     with open(input_file, 'r') as f:
                         raw_data = json.load(f)
                     
-                    # FIX: Check if raw_data is a list (from Java) or dict
-                    blocks = raw_data if isinstance(raw_data, list) else raw_data.get("pixels", [])
-                    
+                    # Handle the new dictionary structure from the latest Java code
+                    # If it's a dict, get 'terrain', otherwise assume it's the old list format
+                    blocks = raw_data.get("terrain", []) if isinstance(raw_data, dict) else raw_data
+                    player_state = raw_data.get("player_state", {}) if isinstance(raw_data, dict) else {}
+
                     if not blocks:
-                        print("[WARN] Scan was empty.")
+                        print("[WARN] Scan contained no terrain data.")
                         last_mtime = current_mtime
                         continue
 
                     engine = ThinPixelScanner()
+                    engine.set_player_state(player_state)
                     
                     print(f"[PROCESSING] Shaving {len(blocks)} blocks...")
                     for block in blocks:
-                        # Map Minecraft materials to colors
                         b_type = block.get('type', 'AIR')
-                        color = (34, 139, 34) if "GRASS" in b_type else (128, 128, 128)
+                        
+                        # Enhanced Color Mapping
+                        if "GRASS" in b_type:
+                            color = (34, 139, 34)
+                        elif "STONE" in b_type:
+                            color = (128, 128, 128)
+                        elif "DIRT" in b_type:
+                            color = (139, 69, 19)
+                        elif "WOOD" in b_type or "LOG" in b_type:
+                            color = (101, 67, 33)
+                        elif "WATER" in b_type:
+                            color = (0, 0, 255)
+                        else:
+                            color = (200, 200, 200) # Default grey
                         
                         engine.add_pixel(
                             block['x'], 
@@ -81,13 +104,11 @@ def monitor_minecraft_data(input_file="surface_data.json"):
                     print("[*] Ready for next scan.")
             
         except PermissionError:
-            # File is being locked by Java, just skip this tick
-            pass
+            pass # Skip if file is locked
         except Exception as e:
-            print(f"[DEBUG] Error details: {type(e).__name__} - {e}")
+            print(f"[DEBUG] Error: {e}")
         
         time.sleep(0.5)
-
 
 if __name__ == "__main__":
     try:
