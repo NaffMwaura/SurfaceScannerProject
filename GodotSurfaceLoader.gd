@@ -8,6 +8,7 @@ export(String, FILE, "*.json") var data_file_path
 func _ready():
     load_surface_data()
 
+
 func load_surface_data():
     var file = File.new()
     if not file.file_exists(data_file_path):

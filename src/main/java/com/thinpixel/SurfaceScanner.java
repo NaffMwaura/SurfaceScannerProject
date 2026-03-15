@@ -66,6 +66,7 @@ public class SurfaceScanner extends JavaPlugin implements Listener {
             }
         }
 
+        
         int radius = 20; 
         int centerX = player.getLocation().getBlockX();
         int centerZ = player.getLocation().getBlockZ();
